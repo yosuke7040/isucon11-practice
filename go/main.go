@@ -1166,6 +1166,14 @@ func getTrend(c echo.Context) error {
 	return c.JSON(http.StatusOK, res)
 }
 
+type IsuConditionInsert struct {
+	JIAIsuUUID string    `db:"jia_isu_uuid"`
+	Timestamp  time.Time `db:"timestamp"`
+	IsSitting  bool      `db:"is_sitting"`
+	Condition  string    `db:"condition"`
+	Message    string    `db:"message"`
+}
+
 // POST /api/condition/:jia_isu_uuid
 // ISUからのコンディションを受け取る
 func postIsuCondition(c echo.Context) error {
@@ -1206,7 +1214,7 @@ func postIsuCondition(c echo.Context) error {
 		return c.String(http.StatusNotFound, "not found: isu")
 	}
 
-	isuCondition := make([]IsuCondition, 0)
+	isuConditionInsert := make([]IsuConditionInsert, 0)
 	// var isuCondition IsuCondition
 
 	for _, cond := range req {
@@ -1226,7 +1234,7 @@ func postIsuCondition(c echo.Context) error {
 		// 	return c.NoContent(http.StatusInternalServerError)
 		// }
 		// todo: created_at周り大丈夫なのか？
-		isuCondition = append(isuCondition, IsuCondition{
+		isuConditionInsert = append(isuConditionInsert, IsuConditionInsert{
 			JIAIsuUUID: jiaIsuUUID,
 			Timestamp:  timestamp,
 			IsSitting:  cond.IsSitting,
@@ -1236,8 +1244,8 @@ func postIsuCondition(c echo.Context) error {
 
 	}
 
-	query := `insert into isu_condition (jia_isu_uuid, timestamp, is_sitting, condition, message) values (:isuCondition)`
-	_, err = tx.NamedExec(query, isuCondition)
+	query := `insert into isu_condition (jia_isu_uuid, timestamp, is_sitting, condition, message) values (:jia_isu_uuid, :timestamp, :is_sitting, :condition, :message)`
+	_, err = tx.NamedExec(query, isuConditionInsert)
 	// _, err = tx.NamedExec(query, map[string]interface{}{
 	// 	"isuCondition": isuCondition,
 	// })
