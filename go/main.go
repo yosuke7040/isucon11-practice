@@ -1245,7 +1245,7 @@ func postIsuCondition(c echo.Context) error {
 	query := `insert into isu_condition (jia_isu_uuid, timestamp, is_sitting, condition, message) values (:jia_isu_uuid, :timestamp, :is_sitting, :condition, :message)`
 	_, err = tx.NamedExec(query, isuConditionInsert)
 	if err != nil {
-		log.printf("======== error ========: %v", err)
+		log.Printf("======== error ========: %v", err)
 		return err
 	}
 	// _, err = tx.NamedExec(query, map[string]interface{}{
