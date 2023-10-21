@@ -336,11 +336,11 @@ func postInitialize(c echo.Context) error {
 	}
 
 	// 追加
-        go func() {
-                if _, err := http.Get("http://localhost:9000/api/group/collect"); err != nil {
-                        log.Printf("failed to communicate with pprotein: %v", err)
-                }
-        }()
+	go func() {
+		if _, err := http.Get("http://localhost:9000/api/group/collect"); err != nil {
+			log.Printf("failed to communicate with pprotein: %v", err)
+		}
+	}()
 
 	return c.JSON(http.StatusOK, InitializeResponse{
 		Language: "go",
@@ -1206,6 +1206,9 @@ func postIsuCondition(c echo.Context) error {
 		return c.String(http.StatusNotFound, "not found: isu")
 	}
 
+	isuCondition := make([]IsuCondition, 0)
+	// var isuCondition IsuCondition
+
 	for _, cond := range req {
 		timestamp := time.Unix(cond.Timestamp, 0)
 
@@ -1213,17 +1216,31 @@ func postIsuCondition(c echo.Context) error {
 			return c.String(http.StatusBadRequest, "bad request body")
 		}
 
-		_, err = tx.Exec(
-			"INSERT INTO `isu_condition`"+
-				"	(`jia_isu_uuid`, `timestamp`, `is_sitting`, `condition`, `message`)"+
-				"	VALUES (?, ?, ?, ?, ?)",
-			jiaIsuUUID, timestamp, cond.IsSitting, cond.Condition, cond.Message)
-		if err != nil {
-			c.Logger().Errorf("db error: %v", err)
-			return c.NoContent(http.StatusInternalServerError)
-		}
+		// _, err = tx.Exec(
+		// 	"INSERT INTO `isu_condition`"+
+		// 		"	(`jia_isu_uuid`, `timestamp`, `is_sitting`, `condition`, `message`)"+
+		// 		"	VALUES (?, ?, ?, ?, ?)",
+		// 	jiaIsuUUID, timestamp, cond.IsSitting, cond.Condition, cond.Message)
+		// if err != nil {
+		// 	c.Logger().Errorf("db error: %v", err)
+		// 	return c.NoContent(http.StatusInternalServerError)
+		// }
+		// todo: created_at周り大丈夫なのか？
+		isuCondition = append(isuCondition, IsuCondition{
+			JIAIsuUUID: jiaIsuUUID,
+			Timestamp:  timestamp,
+			IsSitting:  cond.IsSitting,
+			Condition:  cond.Condition,
+			Message:    cond.Message,
+		})
 
 	}
+
+	query := `insert into isu_condition (jia_isu_uuid, timestamp, is_sitting, condition, message) values (:isuCondition)`
+	_, err = tx.NamedExec(query, isuCondition)
+	// _, err = tx.NamedExec(query, map[string]interface{}{
+	// 	"isuCondition": isuCondition,
+	// })
 
 	err = tx.Commit()
 	if err != nil {
