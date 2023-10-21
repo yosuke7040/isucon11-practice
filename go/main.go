@@ -1215,7 +1215,6 @@ func postIsuCondition(c echo.Context) error {
 	}
 
 	isuConditionInsert := make([]IsuConditionInsert, 0)
-	// var isuCondition IsuCondition
 
 	for _, cond := range req {
 		timestamp := time.Unix(cond.Timestamp, 0)
@@ -1233,7 +1232,6 @@ func postIsuCondition(c echo.Context) error {
 		// 	c.Logger().Errorf("db error: %v", err)
 		// 	return c.NoContent(http.StatusInternalServerError)
 		// }
-		// todo: created_at周り大丈夫なのか？
 		isuConditionInsert = append(isuConditionInsert, IsuConditionInsert{
 			JIAIsuUUID: jiaIsuUUID,
 			Timestamp:  timestamp,
@@ -1246,6 +1244,10 @@ func postIsuCondition(c echo.Context) error {
 
 	query := `insert into isu_condition (jia_isu_uuid, timestamp, is_sitting, condition, message) values (:jia_isu_uuid, :timestamp, :is_sitting, :condition, :message)`
 	_, err = tx.NamedExec(query, isuConditionInsert)
+	if err != nil {
+		log.printf("======== error ========: %v", err)
+		return err
+	}
 	// _, err = tx.NamedExec(query, map[string]interface{}{
 	// 	"isuCondition": isuCondition,
 	// })
