@@ -712,6 +712,7 @@ func getIsuIcon(c echo.Context) error {
 	jiaIsuUUID := c.Param("jia_isu_uuid")
 
 	var image []byte
+	// TODO: 画像をDBで扱っている
 	err = db.Get(&image, "SELECT `image` FROM `isu` WHERE `jia_user_id` = ? AND `jia_isu_uuid` = ?",
 		jiaUserID, jiaIsuUUID)
 	if err != nil {
@@ -1042,10 +1043,17 @@ func getIsuConditionsFromDB(db *sqlx.DB, jiaIsuUUID string, endTime time.Time, c
 	for _, c := range conditions {
 		cLevel, err := calculateConditionLevel(c.Condition)
 		if err != nil {
+			fmt.Println("----------!!!!!!---------", err)
 			continue
 		}
 
-		if _, ok := conditionLevel[cLevel]; ok {
+		_, ok := conditionLevel[cLevel]
+		if !ok {
+			fmt.Println("=========================", cLevel)
+			fmt.Println("=========================", conditionLevel[cLevel])
+		}
+		if ok {
+			// if _, ok := conditionLevel[cLevel]; ok {
 			data := GetIsuConditionResponse{
 				JIAIsuUUID:     c.JIAIsuUUID,
 				IsuName:        isuName,
