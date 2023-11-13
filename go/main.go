@@ -26,6 +26,7 @@ import (
 	"github.com/labstack/gommon/log"
 
 	"github.com/kaz/pprotein/integration/echov4"
+	cmap "github.com/orcaman/concurrent-map/v2"
 )
 
 const (
@@ -335,6 +336,10 @@ func postInitialize(c echo.Context) error {
 		c.Logger().Errorf("db error : %v", err)
 		return c.NoContent(http.StatusInternalServerError)
 	}
+
+	jiaIsuUUIDMap.Clear()
+	// jiaIsuUUIDMap = &sync.Map{}
+	// jiaIsuUUIDMap = sync.Map{}
 
 	// 追加
 	go func() {
@@ -1021,24 +1026,27 @@ func getIsuConditionsFromDB(db *sqlx.DB, jiaIsuUUID string, endTime time.Time, c
 	conditions := []IsuCondition{}
 	var err error
 
+	conditionLevels := []string{}
+	for level := range conditionLevel {
+		conditionLevels = append(conditionLevels, "'"+level+"'")
+	}
+
 	if startTime.IsZero() {
 		err = db.Select(&conditions,
 			"SELECT * FROM `isu_condition` WHERE `jia_isu_uuid` = ?"+
 				"	AND `timestamp` < ?"+
-				"	ORDER BY `timestamp` DESC",
-			jiaIsuUUID, endTime,
-			// 	"	ORDER BY `timestamp` DESC limit ?",
-			// jiaIsuUUID, endTime, limit,
+				" AND `condition_level` in ("+strings.Join(conditionLevels, ",")+") "+
+				"	ORDER BY `timestamp` DESC limit ?",
+			jiaIsuUUID, endTime, limit,
 		)
 	} else {
 		err = db.Select(&conditions,
 			"SELECT * FROM `isu_condition` WHERE `jia_isu_uuid` = ?"+
 				"	AND `timestamp` < ?"+
 				"	AND ? <= `timestamp`"+
-				"	ORDER BY `timestamp` DESC",
-			jiaIsuUUID, endTime, startTime,
-			// "	ORDER BY `timestamp` DESC limit ?",
-			// jiaIsuUUID, endTime, startTime, limit,
+				" AND `condition_level` in ("+strings.Join(conditionLevels, ",")+") "+
+				"	ORDER BY `timestamp` DESC limit ?",
+			jiaIsuUUID, endTime, startTime, limit,
 		)
 	}
 	if err != nil {
@@ -1047,17 +1055,6 @@ func getIsuConditionsFromDB(db *sqlx.DB, jiaIsuUUID string, endTime time.Time, c
 
 	conditionsResponse := []*GetIsuConditionResponse{}
 	for _, c := range conditions {
-		// cLevel, err := calculateConditionLevel(c.Condition)
-		// if err != nil {
-		// 	continue
-		// }
-
-		// _, ok := conditionLevel[cLevel]
-		// if !ok {
-		// 	fmt.Println("abe =========================", cLevel)
-		// 	fmt.Println("abe ========================", conditionLevel[cLevel])
-		// }
-		// if ok {
 
 		if _, ok := conditionLevel[c.ConditionLevel]; ok {
 			data := GetIsuConditionResponse{
@@ -1071,10 +1068,6 @@ func getIsuConditionsFromDB(db *sqlx.DB, jiaIsuUUID string, endTime time.Time, c
 			}
 			conditionsResponse = append(conditionsResponse, &data)
 		}
-	}
-
-	if len(conditionsResponse) > limit {
-		conditionsResponse = conditionsResponse[:limit]
 	}
 
 	return conditionsResponse, nil
@@ -1190,6 +1183,10 @@ type IsuConditionInsert struct {
 	Message        string    `db:"message"`
 }
 
+var jiaIsuUUIDMap = cmap.New[struct{}]()
+
+// var jiaIsuUUIDMap sync.Map
+
 // POST /api/condition/:jia_isu_uuid
 // ISUからのコンディションを受け取る
 func postIsuCondition(c echo.Context) error {
@@ -1220,15 +1217,15 @@ func postIsuCondition(c echo.Context) error {
 	}
 	defer tx.Rollback()
 
-	var count int
-	err = tx.Get(&count, "SELECT COUNT(*) FROM `isu` WHERE `jia_isu_uuid` = ?", jiaIsuUUID)
-	if err != nil {
-		c.Logger().Errorf("db error: %v", err)
-		return c.NoContent(http.StatusInternalServerError)
-	}
-	if count == 0 {
-		return c.String(http.StatusNotFound, "not found: isu")
-	}
+	// var count int
+	// err = tx.Get(&count, "SELECT COUNT(*) FROM `isu` WHERE `jia_isu_uuid` = ?", jiaIsuUUID)
+	// if err != nil {
+	// 	c.Logger().Errorf("db error: %v", err)
+	// 	return c.NoContent(http.StatusInternalServerError)
+	// }
+	// if count == 0 {
+	// 	return c.String(http.StatusNotFound, "not found: isu")
+	// }
 
 	isuConditionInsert := make([]IsuConditionInsert, 0)
 
@@ -1248,6 +1245,21 @@ func postIsuCondition(c echo.Context) error {
 		// 	c.Logger().Errorf("db error: %v", err)
 		// 	return c.NoContent(http.StatusInternalServerError)
 		// }
+		// TODO: スコア下がったので、checkする
+		// ちゃんと機能してない or 毎回違うUUID入ってる？(= メモリ保管分遅くなった？)
+		if !jiaIsuUUIDMap.Has(jiaIsuUUID) {
+			// if _, ok := jiaIsuUUIDMap.Load(jiaIsuUUID); !ok {
+			var count int
+			err = db.Get(&count, "SELECT COUNT(*) FROM `isu` WHERE `jia_isu_uuid` = ?", jiaIsuUUID)
+			if err != nil {
+				c.Logger().Errorf("db error: %v", err)
+				return c.NoContent(http.StatusInternalServerError)
+			}
+			if count == 0 {
+				return c.String(http.StatusNotFound, "not found: isu")
+			}
+			jiaIsuUUIDMap.Set(jiaIsuUUID, struct{}{})
+		}
 
 		conditionLevel, err := calculateConditionLevel(cond.Condition)
 		if err != nil {
