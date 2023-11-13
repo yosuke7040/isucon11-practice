@@ -259,6 +259,8 @@ func main() {
 		return
 	}
 
+	go postIsuConditionWorker()
+
 	serverPort := fmt.Sprintf(":%v", getEnv("SERVER_APP_PORT", "3000"))
 	e.Logger.Fatal(e.Start(serverPort))
 }
@@ -1183,7 +1185,10 @@ type IsuConditionInsert struct {
 	Message        string    `db:"message"`
 }
 
-var jiaIsuUUIDMap = cmap.New[struct{}]()
+var (
+	insertRowCh   = make(chan IsuConditionInsert, 10000)
+	jiaIsuUUIDMap = cmap.New[struct{}]()
+)
 
 // var jiaIsuUUIDMap sync.Map
 
@@ -1191,7 +1196,8 @@ var jiaIsuUUIDMap = cmap.New[struct{}]()
 // ISUからのコンディションを受け取る
 func postIsuCondition(c echo.Context) error {
 	// TODO: 一定割合リクエストを落としてしのぐようにしたが、本来は全量さばけるようにすべき
-	dropProbability := 0.9
+	// -> 同期処理じゃなくても良さそうなので、ゴルーチンで並行処理するようにした
+	dropProbability := 0.0
 	if rand.Float64() <= dropProbability {
 		c.Logger().Warnf("drop post isu condition request")
 		return c.NoContent(http.StatusAccepted)
@@ -1210,25 +1216,6 @@ func postIsuCondition(c echo.Context) error {
 		return c.String(http.StatusBadRequest, "bad request body")
 	}
 
-	tx, err := db.Beginx()
-	if err != nil {
-		c.Logger().Errorf("db error: %v", err)
-		return c.NoContent(http.StatusInternalServerError)
-	}
-	defer tx.Rollback()
-
-	// var count int
-	// err = tx.Get(&count, "SELECT COUNT(*) FROM `isu` WHERE `jia_isu_uuid` = ?", jiaIsuUUID)
-	// if err != nil {
-	// 	c.Logger().Errorf("db error: %v", err)
-	// 	return c.NoContent(http.StatusInternalServerError)
-	// }
-	// if count == 0 {
-	// 	return c.String(http.StatusNotFound, "not found: isu")
-	// }
-
-	isuConditionInsert := make([]IsuConditionInsert, 0)
-
 	for _, cond := range req {
 		timestamp := time.Unix(cond.Timestamp, 0)
 
@@ -1236,19 +1223,9 @@ func postIsuCondition(c echo.Context) error {
 			return c.String(http.StatusBadRequest, "bad request body")
 		}
 
-		// _, err = tx.Exec(
-		// 	"INSERT INTO `isu_condition`"+
-		// 		"	(`jia_isu_uuid`, `timestamp`, `is_sitting`, `condition`, `message`)"+
-		// 		"	VALUES (?, ?, ?, ?, ?)",
-		// 	jiaIsuUUID, timestamp, cond.IsSitting, cond.Condition, cond.Message)
-		// if err != nil {
-		// 	c.Logger().Errorf("db error: %v", err)
-		// 	return c.NoContent(http.StatusInternalServerError)
-		// }
 		// TODO: スコア下がったので、checkする
 		// ちゃんと機能してない or 毎回違うUUID入ってる？(= メモリ保管分遅くなった？)
 		if !jiaIsuUUIDMap.Has(jiaIsuUUID) {
-			// if _, ok := jiaIsuUUIDMap.Load(jiaIsuUUID); !ok {
 			var count int
 			err = db.Get(&count, "SELECT COUNT(*) FROM `isu` WHERE `jia_isu_uuid` = ?", jiaIsuUUID)
 			if err != nil {
@@ -1267,34 +1244,42 @@ func postIsuCondition(c echo.Context) error {
 			return c.NoContent(http.StatusInternalServerError)
 		}
 
-		isuConditionInsert = append(isuConditionInsert, IsuConditionInsert{
+		insertRowCh <- IsuConditionInsert{
 			JIAIsuUUID:     jiaIsuUUID,
 			Timestamp:      timestamp,
 			IsSitting:      cond.IsSitting,
 			Condition:      cond.Condition,
 			ConditionLevel: conditionLevel,
 			Message:        cond.Message,
-		})
-
-	}
-
-	query := "insert into isu_condition (jia_isu_uuid, timestamp, is_sitting, `condition`, condition_level, message) values (:jia_isu_uuid, :timestamp, :is_sitting, :condition, :condition_level, :message)"
-	_, err = tx.NamedExec(query, isuConditionInsert)
-	if err != nil {
-		log.Printf("======== error ========: %v", err)
-		return err
-	}
-	// _, err = tx.NamedExec(query, map[string]interface{}{
-	// 	"isuCondition": isuCondition,
-	// })
-
-	err = tx.Commit()
-	if err != nil {
-		c.Logger().Errorf("db error: %v", err)
-		return c.NoContent(http.StatusInternalServerError)
+		}
 	}
 
 	return c.NoContent(http.StatusAccepted)
+}
+
+func postIsuConditionWorker() {
+	rows := []IsuConditionInsert{}
+	ticker := time.NewTicker(100 * time.Millisecond)
+
+	for {
+		select {
+		case <-ticker.C:
+			if len(rows) == 0 {
+				continue
+			}
+
+			query := "insert into isu_condition (jia_isu_uuid, timestamp, is_sitting, `condition`, condition_level, message) values (:jia_isu_uuid, :timestamp, :is_sitting, :condition, :condition_level, :message)"
+			_, err := db.NamedExec(query, rows)
+			if err != nil {
+				log.Errorf("db error: %v", err)
+			}
+			rows = []IsuConditionInsert{}
+
+		case row := <-insertRowCh:
+			rows = append(rows, row)
+		}
+	}
+
 }
 
 // ISUのコンディションの文字列がcsv形式になっているか検証
