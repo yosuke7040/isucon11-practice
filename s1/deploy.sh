@@ -10,8 +10,8 @@ sudo cp -f ./etc/nginx/sites-available/isucondition.conf /etc/nginx/sites-availa
 
 #git fetch
 #git reset --hard origin/main
-# cd go
-# go build -o isucondition main.go
-# sudo systemctl restart isucondition.go.service
-# sudo systemctl restart nginx
-sudo systemctl restart mariadb
+cd ../go
+go build -o isucondition main.go
+sudo systemctl restart isucondition.go.service
+sudo systemctl restart nginx
+# sudo systemctl restart mariadb
