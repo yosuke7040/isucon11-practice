@@ -10,8 +10,8 @@ sudo cp -f ./etc/nginx/nginx.conf /etc/nginx/nginx.conf
 
 #git fetch
 #git reset --hard origin/main
-# cd go
-# go build -o isucondition main.go
-# sudo systemctl restart isucondition.go.service
+cd ../go
+go build -o isucondition main.go
+sudo systemctl restart isucondition.go.service
 # sudo systemctl restart nginx
 sudo systemctl restart mariadb
