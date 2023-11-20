@@ -1,0 +1,9 @@
+# MYSQL_HOST="127.0.0.1"
+MYSQL_HOST=192.168.0.12
+MYSQL_PORT=3306
+# export MYSQL_USER=isucon
+MYSQL_USER=user1
+MYSQL_DBNAME=isucondition
+# export MYSQL_PASS=isucon
+MYSQL_PASS=user1
+POST_ISUCONDITION_TARGET_BASE_URL="https://isucondition-1.t.isucon.dev"
